@@ -1,0 +1,148 @@
+-- Find the total number of unique patients represented in the dataset.
+SELECT COUNT(DISTINCT "Name") AS total_patients
+FROM patients;
+
+-- Find the total number of visits by year.
+SELECT "Admission Year" AS year,
+       COUNT(*) AS total_visits
+FROM patients
+GROUP BY year
+ORDER BY year ASC;
+
+-- Find the total number of visits by each age group.
+SELECT "Age Group",
+       COUNT(*) AS total_visits
+FROM patients
+GROUP BY "Age Group"
+ORDER BY total_visits DESC;
+
+-- Find the total number of visits by admission type.
+SELECT "Admission Type",
+       COUNT(*) AS total_visits
+FROM patients
+GROUP BY "Admission Type"
+ORDER BY total_visits DESC;
+
+-- Find the total and average billing amount across all patients.
+SELECT ROUND(SUM("Billing Amount")) AS total_billed,
+       ROUND(AVG("Billing Amount")) AS average_billed
+FROM patients;
+
+-- Find the total number of unique patients by gender.
+SELECT Gender,
+       COUNT(DISTINCT "Name") AS total_patients
+FROM patients
+GROUP BY Gender
+ORDER BY total_patients DESC;
+
+-- Find the average length of stay by admission type.
+SELECT "Admission Type",
+       ROUND(AVG("Length of Stay"), 1) AS average_length
+FROM patients
+GROUP BY "Admission Type"
+ORDER BY average_length DESC;
+
+-- Find the number of test results by blood type.
+SELECT "Blood Type",
+       "Test Results",
+       COUNT(*) AS number_of_results
+FROM patients
+GROUP BY "Blood Type", "Test Results"
+ORDER BY "Blood Type", number_of_results DESC;
+
+-- Find the condition with the highest average bill.
+SELECT "Medical Condition",
+       ROUND(AVG("Billing Amount")) AS average_bill
+FROM patients
+GROUP BY "Medical Condition"
+ORDER BY average_bill DESC
+LIMIT 1;
+
+-- Find the largest differences between the average bill by admission type
+-- and the actual amount billed for each patient.
+SELECT "Admission Type",
+       "Medical Condition",
+       "Length of Stay",
+       ROUND("Billing Amount") AS amount_billed,
+       ROUND(AVG("Billing Amount") OVER (PARTITION BY "Admission Type")) AS avg_admission_bill,
+       ROUND("Billing Amount" - AVG("Billing Amount") OVER (PARTITION BY "Admission Type")) AS diff_from_avg_bill
+FROM patients
+ORDER BY diff_from_avg_bill DESC
+LIMIT 10;
+
+-- For each patient, calculate the difference between their amount billed 
+-- and their own average amount billed across all visits.
+-- Filter out the rows where the difference is zero,
+-- and anyone who has 2 or fewer visits.
+WITH patient_diff AS (
+    SELECT "Name",
+           "Admission Type",
+           ROUND("Billing Amount") AS amount_billed,
+           ROUND(AVG("Billing Amount") OVER (PARTITION BY "Name")) AS avg_bill,
+           ROUND(
+               100 * (
+                   ("Billing Amount" - AVG("Billing Amount") OVER (PARTITION BY "Name"))
+                   / AVG("Billing Amount") OVER (PARTITION BY "Name")
+               )
+           ) AS pct_from_avg_bill,
+           COUNT(*) OVER (PARTITION BY "Name") AS visits
+    FROM patients
+)
+SELECT *
+FROM patient_diff
+WHERE visits >= 3
+  AND pct_from_avg_bill <> 0
+ORDER BY pct_from_avg_bill DESC
+LIMIT 10;
+
+-- Compute a running total of the amount billed per month for every year.
+WITH monthly_totals AS (
+    SELECT "Admission Year",
+           "Admission Month",
+           SUM("Billing Amount") AS total_billed
+    FROM patients
+    GROUP BY "Admission Year", "Admission Month"
+    ORDER BY "Admission Year", "Admission Month"
+)
+SELECT *,
+       SUM(total_billed) OVER (PARTITION BY "Admission Year" ORDER BY "Admission Month") AS running_total
+FROM monthly_totals
+WHERE "Admission Year" BETWEEN 2020 AND 2023;
+
+-- Compute a running total of the number of patients per month for every year.
+WITH monthly_totals AS (
+    SELECT "Admission Year",
+           "Admission Month",
+           COUNT(*) AS total_patients
+    FROM patients
+    GROUP BY "Admission Year", "Admission Month"
+    ORDER BY "Admission Year", "Admission Month"
+)
+SELECT *,
+       SUM(total_patients) OVER (PARTITION BY "Admission Year" ORDER BY "Admission Month") AS running_total
+FROM monthly_totals
+WHERE "Admission Year" BETWEEN 2020 AND 2023;
+
+-- Compute the percent change from one month to the next.
+WITH monthly_totals AS (
+    SELECT "Admission Year",
+           "Admission Month",
+           SUM("Billing Amount") AS total_billed
+    FROM patients
+    GROUP BY "Admission Year", "Admission Month"
+    ORDER BY "Admission Year", "Admission Month"
+)
+SELECT *,
+       ROUND(
+           100.0 * (total_billed - LAG(total_billed) OVER (PARTITION BY "Admission Year" ORDER BY "Admission Month"))
+           / LAG(total_billed) OVER (PARTITION BY "Admission Year" ORDER BY "Admission Month")
+       ) AS pct_change
+FROM monthly_totals
+WHERE "Admission Year" BETWEEN 2020 AND 2023;
+
+-- Find the insurance providers that are most well represented in the sample.
+SELECT "Insurance Provider",
+       SUM("Billing Amount") AS total_billed
+FROM patients
+GROUP BY "Insurance Provider"
+ORDER BY total_billed DESC;
